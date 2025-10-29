@@ -7,12 +7,12 @@
 # Example: ./scripts/run_pile_paraphrase.sh pythia-2.8b   (uses all samples, batch_size=1)
 
 # 설정
-model_family=${1:-pythia-1.4b}
+model_family=${1:-pythia-12b}
 num_samples=${2:-null}
-batch_size=${3:-2}
+batch_size=${3:-8}
 
 # 환경 설정b
-export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
+export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0,1}
 # Get script directory
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -52,10 +52,11 @@ fi
 
 echo "Found $domains domains in pile_samples/"
 echo ""
+master_port=29500
 
 # 실행
 if [ "$num_samples" = "null" ]; then
-    python memorization/paraphrase_main.py \
+    CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES  MASTER_PORT=$master_port torchrun --nproc_per_node=2 memorization/paraphrase_main.py \
         --config-name=pile_paraphrase_analysis \
         model_family=$model_family \
         pile_samples_dir=./pile_samples \
@@ -69,7 +70,7 @@ if [ "$num_samples" = "null" ]; then
         analysis.repetition_penalty=1.1 \
         analysis.use_soft_beam_sampling=true
 else
-    python memorization/paraphrase_main.py \
+    CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES  MASTER_PORT=$master_port torchrun --nproc_per_node=2 memorization/paraphrase_main.py \
         --config-name=pile_paraphrase_analysis \
         model_family=$model_family \
         num_samples=$num_samples \

@@ -6,7 +6,7 @@
 # Example: ./run_mia_all_configs.sh pythia-410m
 
 # Get parameters from command line
-model_family=${1:-pythia-2.8b}
+model_family=${1:-pythia-160m}
 
 # Auto-detect model path
 case $model_family in
