@@ -22,7 +22,6 @@ domains=(
 hvp_methods=(
     "gradient_match"
     "DataInf"
-    "LiSSA"
     "repsim"
 )
 

@@ -177,20 +177,37 @@ def influence_function(member_grad_dict, nonmember_grad_dict, hvp_cal='gradient_
 
     elif hvp_cal == 'DataInf':
         print("Computing HVP using DataInf (GPU-accelerated)...")
-        for val_id in tqdm(nonmember_grad_dict.keys(), desc="Processing nonmembers"):
+
+        # Pre-move all gradients to GPU once (more efficient)
+        print("Moving all gradients to GPU...")
+        member_grad_dict_gpu = {}
+        for tr_id in tqdm(member_grad_dict.keys(), desc="Moving member grads to GPU"):
+            member_grad_dict_gpu[tr_id] = {}
+            for weight_name in member_grad_dict[tr_id]:
+                member_grad_dict_gpu[tr_id][weight_name] = member_grad_dict[tr_id][weight_name].to(device)
+
+        nonmember_grad_dict_gpu = {}
+        for val_id in tqdm(nonmember_grad_dict.keys(), desc="Moving nonmember grads to GPU"):
+            nonmember_grad_dict_gpu[val_id] = {}
             for weight_name in nonmember_grad_dict[val_id]:
+                nonmember_grad_dict_gpu[val_id][weight_name] = nonmember_grad_dict[val_id][weight_name].to(device)
+
+        print("✓ All gradients moved to GPU, starting computation...")
+
+        for val_id in tqdm(nonmember_grad_dict_gpu.keys(), desc="Processing nonmembers"):
+            for weight_name in nonmember_grad_dict_gpu[val_id]:
                 lambda_const = calculate_lambda_const(member_grad_dict, weight_name)
 
-                # Move test gradient to GPU
-                test_grad = nonmember_grad_dict[val_id][weight_name].to(device)
+                # Gradients already on GPU
+                test_grad = nonmember_grad_dict_gpu[val_id][weight_name]
                 hvp = torch.zeros_like(test_grad, device=device)
 
                 # Vectorized computation for all train samples
                 # Stack all train gradients for this weight into a single tensor
                 train_grads_list = []
-                for tr_id in member_grad_dict:
-                    if weight_name in member_grad_dict[tr_id]:
-                        train_grads_list.append(member_grad_dict[tr_id][weight_name].to(device))
+                for tr_id in member_grad_dict_gpu:
+                    if weight_name in member_grad_dict_gpu[tr_id]:
+                        train_grads_list.append(member_grad_dict_gpu[tr_id][weight_name])
 
                 if train_grads_list:
                     # Stack into [num_train, grad_shape]
@@ -216,43 +233,10 @@ def influence_function(member_grad_dict, nonmember_grad_dict, hvp_cal='gradient_
 
                 hvp_dict[val_id][weight_name] = hvp.cpu()
 
-        print("✓ GPU computation complete, moving results to CPU")
-
-    elif hvp_cal == 'LiSSA':
-        print("Computing HVP using LiSSA (GPU-accelerated)...")
-        for val_id in tqdm(nonmember_grad_dict.keys(), desc="Processing nonmembers"):
-            for weight_name in nonmember_grad_dict[val_id]:
-                lambda_const = calculate_lambda_const(member_grad_dict, weight_name)
-
-                # Move to GPU
-                test_grad = nonmember_grad_dict[val_id][weight_name].to(device)
-                running_hvp = test_grad.clone()
-
-                # Prepare train gradients
-                train_grads_list = []
-                for tr_id in member_grad_dict:
-                    if weight_name in member_grad_dict[tr_id]:
-                        train_grads_list.append(member_grad_dict[tr_id][weight_name].to(device))
-
-                if train_grads_list:
-                    train_grads = torch.stack(train_grads_list)  # [N, ...]
-                    original_shape = train_grads.shape[1:]
-                    train_grads_flat = train_grads.flatten(1)  # [N, D]
-
-                    for _ in range(n_iteration):
-                        running_hvp_flat = running_hvp.flatten()  # [D]
-
-                        # Vectorized HVP computation
-                        dot_products = torch.matmul(train_grads_flat, running_hvp_flat)  # [N]
-                        hvp_contributions = train_grads_flat * dot_products.unsqueeze(1)  # [N, D]
-                        hvp_tmp_flat = (hvp_contributions.sum(0) - lambda_const * running_hvp_flat) / n_train / 1e3
-
-                        running_hvp_flat = test_grad.flatten() + running_hvp_flat - alpha_const * hvp_tmp_flat
-                        running_hvp = running_hvp_flat.reshape(original_shape)
-
-                hvp_dict[val_id][weight_name] = running_hvp.cpu()
-
-        print("✓ GPU computation complete, moving results to CPU")
+        # Clean up GPU memory
+        del member_grad_dict_gpu, nonmember_grad_dict_gpu
+        torch.cuda.empty_cache()
+        print("✓ GPU computation complete, results moved to CPU")
 
     elif hvp_cal == 'repsim':
         print("Using repsim method (hidden state cosine similarity)...")
@@ -294,17 +278,28 @@ def compute_repsim_similarity(member_hidden_states, nonmember_hidden_states):
     Returns:
         DataFrame with similarity scores [members x nonmembers]
     """
-    print("Computing cosine similarity matrix (repsim)...")
+    print("Computing cosine similarity matrix (repsim) with GPU acceleration...")
+
+    # Check if GPU is available
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f"Using device: {device}")
+
+    # Convert to torch tensors and move to GPU
+    member_tensor = torch.from_numpy(member_hidden_states).to(device)
+    nonmember_tensor = torch.from_numpy(nonmember_hidden_states).to(device)
 
     # Normalize for cosine similarity
-    member_norms = np.linalg.norm(member_hidden_states, axis=1, keepdims=True)
-    nonmember_norms = np.linalg.norm(nonmember_hidden_states, axis=1, keepdims=True)
+    member_norms = torch.norm(member_tensor, dim=1, keepdim=True)
+    nonmember_norms = torch.norm(nonmember_tensor, dim=1, keepdim=True)
 
-    member_normalized = member_hidden_states / (member_norms + 1e-8)
-    nonmember_normalized = nonmember_hidden_states / (nonmember_norms + 1e-8)
+    member_normalized = member_tensor / (member_norms + 1e-8)
+    nonmember_normalized = nonmember_tensor / (nonmember_norms + 1e-8)
 
     # Compute cosine similarity: [N_members, N_nonmembers]
-    similarity_matrix = np.dot(member_normalized, nonmember_normalized.T)
+    similarity_matrix = torch.matmul(member_normalized, nonmember_normalized.T)
+
+    # Move back to CPU and convert to numpy
+    similarity_matrix = similarity_matrix.cpu().numpy()
 
     print(f"✅ Computed similarity matrix: {similarity_matrix.shape}")
     return pd.DataFrame(similarity_matrix, dtype=float)
