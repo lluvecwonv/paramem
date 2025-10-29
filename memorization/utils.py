@@ -84,3 +84,85 @@ def load_pile_texts(data_path, subset_name='all', split='train', num_samples=Non
     logger.info(f"✅ Loaded {len(texts)} texts from Pile")
 
     return texts
+
+
+def get_model_identifiers_from_yaml(model_family):
+    """Alias for get_model_config for backward compatibility"""
+    return get_model_config(model_family)
+
+
+def find_train_test_pairs(results_dir, domains=None):
+    """Find train/test file pairs in results directory
+
+    Args:
+        results_dir (str): Directory containing result JSON files
+        domains (list, optional): List of domains to filter (e.g., ['arxiv', 'dm_mathematics'])
+                                 If None, returns all pairs
+
+    Returns:
+        dict: Dictionary mapping base_name to {'train': path, 'test': path, 'domain': domain}
+
+    Example:
+        >>> pairs = find_train_test_pairs('./results')
+        >>> for name, files in pairs.items():
+        ...     print(f"{name}: {files['train']} & {files['test']}")
+
+        >>> # Filter by domains
+        >>> pairs = find_train_test_pairs('./results', domains=['arxiv', 'dm_mathematics'])
+    """
+    import re
+    from pathlib import Path
+    from collections import defaultdict
+
+    # Default domains from MIA analysis
+    if domains is None:
+        domains = [
+            "arxiv",
+            "dm_mathematics",
+            "github",
+            "hackernews",
+            "pile_cc",
+            "pubmed_central",
+            "wikipedia_en"
+        ]
+
+    results_path = Path(results_dir)
+    json_files = list(results_path.glob("*.json"))
+
+    pairs = defaultdict(dict)
+    pattern = r"^(.+)_(train|test)\.json$"
+
+    for json_file in json_files:
+        match = re.match(pattern, json_file.name)
+        if match:
+            base_name = match.group(1)
+            split_type = match.group(2)
+
+            # Extract domain from base_name
+            # Pattern: {model}_{method}_{domain}
+            domain = None
+            for d in domains:
+                if d in base_name:
+                    domain = d
+                    break
+
+            # Skip if domain not in filter list
+            if domain is None:
+                continue
+
+            if base_name not in pairs:
+                pairs[base_name]['domain'] = domain
+
+            pairs[base_name][split_type] = str(json_file)
+
+    # Return only complete pairs (both train and test)
+    complete_pairs = {
+        name: files for name, files in pairs.items()
+        if 'train' in files and 'test' in files
+    }
+
+    logger.info(f"Found {len(complete_pairs)} train/test pairs in {results_dir}")
+    if domains:
+        logger.info(f"Filtered by domains: {domains}")
+
+    return complete_pairs
