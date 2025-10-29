@@ -383,6 +383,8 @@ if __name__ == '__main__':
         'pythia-410m': 'EleutherAI/pythia-410m',
         'pythia-1.4b': 'EleutherAI/pythia-1.4b',
         'pythia-2.8b': 'EleutherAI/pythia-2.8b',
+        'pythia-6.7b': 'EleutherAI/pythia-6.7b',
+        'pythia-12b': 'EleutherAI/pythia-12b',
     }
 
     if args.model not in model_mapping:

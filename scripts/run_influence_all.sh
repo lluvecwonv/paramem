@@ -5,9 +5,9 @@
 # Example: ./scripts/run_influence_all.sh pythia-2.8b
 # Example: ./scripts/run_influence_all.sh pythia-410m
 
-model=${1:-pythia-}
+model=${1:-pythia-6.7b}
 
-export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
+export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-1}
 
 domains=(
     "arxiv"
