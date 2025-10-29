@@ -7,7 +7,7 @@
 # Example: ./scripts/run_pile_paraphrase.sh pythia-2.8b   (uses all samples, batch_size=1)
 
 # 설정
-model_family=${1:-pythia-12b}
+model_family=${1:-pythia-2.9b}
 num_samples=${2:-null}
 batch_size=${3:-2}
 
