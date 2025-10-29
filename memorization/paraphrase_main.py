@@ -85,13 +85,14 @@ def main(cfg: DictConfig):
     """Pile 서브셋별 패러프레이즈 분석 (pile_samples JSONL 파일 사용)"""
 
     local_rank = int(os.environ.get('LOCAL_RANK', 0))
-    if local_rank != 0:
-        return
 
     if torch.cuda.is_available():
-        device = torch.device('cuda:0')
+        device = torch.device(f'cuda:{local_rank}')
+        torch.cuda.set_device(local_rank)
     else:
         device = torch.device('cpu')
+
+    print(f"Process {local_rank} using device: {device}")
 
     generation_mode = getattr(cfg.analysis, 'generation_mode', 'greedy_Nprompts')
     num_samples = cfg.get('num_samples', None)  # None = use all
@@ -112,13 +113,17 @@ def main(cfg: DictConfig):
     print(f"{'='*60}\n")
 
     # Load model
-    print(f"Loading model...")
+    print(f"[Rank {local_rank}] Loading model...")
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     tokenizer.pad_token = tokenizer.eos_token
 
-    model = AutoModelForCausalLM.from_pretrained(model_path)
+    # Load model in FP16 to save memory
+    model = AutoModelForCausalLM.from_pretrained(
+        model_path,
+        torch_dtype=torch.float16
+    )
     model = model.to(device)
-    print(f"✅ Model loaded\n")
+    print(f"[Rank {local_rank}] ✅ Model loaded on {device}\n")
 
     generator = ParaphraseGenerator(cfg)
 
@@ -132,11 +137,17 @@ def main(cfg: DictConfig):
 
     print(f"Found {len(domain_folders)} domains: {domain_folders}\n")
 
+    # Distribute domains across GPUs
+    world_size = int(os.environ.get('WORLD_SIZE', 1))
+    my_domains = [d for i, d in enumerate(domain_folders) if i % world_size == local_rank]
+
+    print(f"[Rank {local_rank}] Processing {len(my_domains)} domains: {my_domains}\n")
+
     # 각 도메인별로 train과 test 모두 처리
     skipped_count = 0
     processed_count = 0
 
-    for domain_name in domain_folders:
+    for domain_name in my_domains:
         for split_type in ['train', 'test']:
             print(f"\n{'='*60}")
             print(f"Processing: {domain_name} / {split_type}")
@@ -275,9 +286,9 @@ def main(cfg: DictConfig):
             print(f"📊 Generated {len(all_paraphrases)} paraphrases, {failed_count} failed")
 
     print(f"\n{'='*60}")
-    print("✅ All domains processed!")
+    print(f"[Rank {local_rank}] ✅ All domains processed!")
     print(f"{'='*60}")
-    print(f"📊 Summary:")
+    print(f"[Rank {local_rank}] 📊 Summary:")
     print(f"   - Processed: {processed_count}")
     print(f"   - Skipped (already exists): {skipped_count}")
     print(f"   - Total: {processed_count + skipped_count}")
