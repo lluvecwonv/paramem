@@ -5,7 +5,7 @@ sample_output_dir: ./pile_samples
 
 # MIMIR split to use
 # Options: ngram_7_0.2, ngram_13_0.2, ngram_13_0.8
-mimir_split: ngram_7_0.2
+mimir_split: ngram_7_0.2 
 
 # Number of samples per domain (null = use all available)
 # MIMIR has ~1000 samples per domain (github has 740)
