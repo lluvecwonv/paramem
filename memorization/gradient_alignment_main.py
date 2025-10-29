@@ -317,7 +317,7 @@ def process_single_pair(train_file, test_file, model, tokenizer, device, cfg, ou
     return output_file
 
 
-@hydra.main(version_base=None, config_path="config", config_name="gradient_alignment")
+@hydra.main(version_base=None, config_path="../config", config_name="gradient_alignment")
 def main(cfg: DictConfig):
     """그라디언트 정렬도 분석 메인 함수"""
 

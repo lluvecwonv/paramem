@@ -29,7 +29,6 @@ domains=(
 )
 
 # Environment setup
-export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
 export PYTHONPATH=/root/memorization:$PYTHONPATH
 
 # Change to project root
@@ -50,8 +49,8 @@ done
 echo "=========================================="
 echo ""
 
-# Run gradient alignment with torchrun (multi-GPU)
-torchrun --nproc_per_node=2 --master_port=29500 \
+# Run gradient alignment with torchrun (single GPU)
+CUDA_VISIBLE_DEVICES=1 torchrun --nproc_per_node=1 \
     memorization/gradient_alignment_main.py \
     model_family=$model_family \
     results_dir=$results_dir \

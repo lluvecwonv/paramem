@@ -36,7 +36,7 @@ def write_jsonl(data, file_path):
     print(f"💾 Saved {len(data)} samples to: {file_path}")
 
 
-def load_mimir_domain(domain_name, split='ngram_7_0.2', num_samples=None):
+def load_mimir_domain(domain_name, split=None, num_samples=None):
     """
     MIMIR 데이터셋에서 특정 도메인 로드
 
@@ -69,7 +69,7 @@ def load_mimir_domain(domain_name, split='ngram_7_0.2', num_samples=None):
     return ds
 
 
-def create_mimir_dataset(domain_name, output_dir, split='ngram_7_0.2', num_samples=None):
+def create_mimir_dataset(domain_name, output_dir, split='none', num_samples=None):
     """
     MIMIR 데이터셋에서 train/test JSONL 파일 생성
 
@@ -127,7 +127,7 @@ def main(cfg: DictConfig):
     os.makedirs(output_dir, exist_ok=True)
 
     # MIMIR split 선택 (기본값: ngram_7_0.2)
-    mimir_split = getattr(cfg, 'mimir_split', 'ngram_7_0.2')
+    mimir_split = getattr(cfg, 'mimir_split', 'none')
 
     # 샘플 수 제한 (None = 전체 사용)
     num_samples = getattr(cfg, 'num_samples_per_domain', None)

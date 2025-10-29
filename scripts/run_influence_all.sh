@@ -5,7 +5,7 @@
 # Example: ./scripts/run_influence_all.sh pythia-2.8b
 # Example: ./scripts/run_influence_all.sh pythia-410m
 
-model=${1:-pythia-160m}
+model=${1:-pythia-}
 
 export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
 
