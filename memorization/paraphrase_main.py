@@ -18,7 +18,7 @@ parent_dir = os.path.dirname(script_dir)
 sys.path.insert(0, parent_dir)
 
 from memorization.analysis.paraphrase_generator import ParaphraseGenerator
-from memorization.utils import get_model_config
+from memorization.utils import get_model_config, check_paraphrase_completed
 
 # Pile 서브셋들 (MIMIR 데이터셋의 도메인들)
 PILE_SUBSETS = [
@@ -133,11 +133,28 @@ def main(cfg: DictConfig):
     print(f"Found {len(domain_folders)} domains: {domain_folders}\n")
 
     # 각 도메인별로 train과 test 모두 처리
+    skipped_count = 0
+    processed_count = 0
+
     for domain_name in domain_folders:
         for split_type in ['train', 'test']:
             print(f"\n{'='*60}")
             print(f"Processing: {domain_name} / {split_type}")
             print(f"{'='*60}")
+
+            # Check if already completed
+            is_completed, output_file = check_paraphrase_completed(
+                cfg.analysis.output_dir,
+                cfg.model_family,
+                generation_mode,
+                domain_name,
+                split_type
+            )
+
+            if is_completed:
+                print(f"⏭️  SKIPPED: {domain_name}/{split_type} - Already exists at {output_file}")
+                skipped_count += 1
+                continue
 
             # pile_samples에서 데이터 로드
             texts = load_pile_samples_data(
@@ -150,6 +167,8 @@ def main(cfg: DictConfig):
             if not texts:
                 print(f"❌ No data loaded for {domain_name}/{split_type}, skipping...")
                 continue
+
+            processed_count += 1
 
             print(f"✅ Loaded {len(texts)} texts from {domain_name}/{split_type}")
 
@@ -257,6 +276,11 @@ def main(cfg: DictConfig):
 
     print(f"\n{'='*60}")
     print("✅ All domains processed!")
+    print(f"{'='*60}")
+    print(f"📊 Summary:")
+    print(f"   - Processed: {processed_count}")
+    print(f"   - Skipped (already exists): {skipped_count}")
+    print(f"   - Total: {processed_count + skipped_count}")
     print(f"{'='*60}")
 
 

@@ -91,6 +91,60 @@ def get_model_identifiers_from_yaml(model_family):
     return get_model_config(model_family)
 
 
+def check_paraphrase_completed(output_dir, model_family, generation_mode, domain_name, split_type):
+    """Check if paraphrase generation is already completed for a domain/split
+
+    Args:
+        output_dir (str): Output directory for results
+        model_family (str): Model family name (e.g., 'pythia-2.8b')
+        generation_mode (str): Generation mode (e.g., 'beam_single_prompt')
+        domain_name (str): Domain name (e.g., 'arxiv', 'dm_mathematics')
+        split_type (str): Split type ('train' or 'test')
+
+    Returns:
+        tuple: (bool, str) - (is_completed, output_file_path)
+
+    Example:
+        >>> completed, path = check_paraphrase_completed(
+        ...     './results', 'pythia-1.4b', 'beam_single_prompt', 'arxiv', 'train'
+        ... )
+        >>> if completed:
+        ...     print(f"Already exists: {path}")
+    """
+    import os
+    import json
+
+    output_file = os.path.join(
+        output_dir,
+        f"{model_family}_{generation_mode}_{domain_name}_{split_type}.json"
+    )
+
+    if not os.path.exists(output_file):
+        return False, output_file
+
+    # Check if file is valid JSON with expected structure
+    try:
+        with open(output_file, 'r') as f:
+            data = json.load(f)
+
+        # Validate structure
+        if 'GeneratedParaphrases' not in data:
+            logger.warning(f"Invalid format in {output_file}, will regenerate")
+            return False, output_file
+
+        num_paraphrases = len(data.get('GeneratedParaphrases', []))
+        if num_paraphrases == 0:
+            logger.warning(f"Empty paraphrases in {output_file}, will regenerate")
+            return False, output_file
+
+        logger.info(f"✓ Found existing: {output_file} ({num_paraphrases} samples)")
+        return True, output_file
+
+    except (json.JSONDecodeError, Exception) as e:
+        logger.warning(f"Corrupted file {output_file}: {e}, will regenerate")
+        return False, output_file
+
+
 def find_train_test_pairs(results_dir, domains=None):
     """Find train/test file pairs in results directory
 
