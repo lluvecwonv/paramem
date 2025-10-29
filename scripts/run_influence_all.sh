@@ -23,6 +23,7 @@ hvp_methods=(
     "gradient_match"
     "DataInf"
     "LiSSA"
+    "repsim"
 )
 
 echo "=========================================="
@@ -36,7 +37,7 @@ echo "GPU: $CUDA_VISIBLE_DEVICES"
 echo "=========================================="
 echo ""
 
-cd /root/memorization/Influence-Functions
+cd "$(dirname "$0")/../Influence-Functions"
 
 total=$((${#domains[@]} * ${#hvp_methods[@]}))
 current=0

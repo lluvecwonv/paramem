@@ -52,7 +52,7 @@ echo "=========================================="
 echo ""
 
 # Change to parent directory
-cd /root/memorization
+cd "$(dirname "$0")/.."
 
 # Counter for tracking progress
 total=${#local_domains[@]}

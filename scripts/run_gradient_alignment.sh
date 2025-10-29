@@ -4,9 +4,13 @@
 # Usage: ./run_gradient_alignment.sh [model_family] [paraphrase_results_file]
 # Example: ./run_gradient_alignment.sh pythia-2.8b results/pythia-2.8b_greedy_Nprompts_train_pile/generated_paraphrases.json
 
+# Get script directory
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
 # GPU 설정
 export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
-export PYTHONPATH=/root/memorization:$PYTHONPATH
+export PYTHONPATH="$PROJECT_ROOT:$PYTHONPATH"
 
 # Get parameters
 model_family=${1:-pythia-2.8b}
@@ -65,8 +69,8 @@ esac
 echo "✅ Model path: $model_path"
 echo ""
 
-# Change to memorization directory
-cd /root/memorization
+# Change to project directory
+cd "$PROJECT_ROOT"
 
 # Create output filename
 output_dir=$(dirname "$paraphrase_results_file")

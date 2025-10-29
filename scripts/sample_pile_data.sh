@@ -7,10 +7,14 @@
 output_dir=${1:-./pile_samples}
 
 # 환경 설정
-export PYTHONPATH=/root/memorization:$PYTHONPATH
+# Get script directory
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+export PYTHONPATH="$PROJECT_ROOT:$PYTHONPATH"
 
 # 디렉토리 이동
-cd /root/memorization
+cd "$PROJECT_ROOT"
 
 echo "=========================================="
 echo "PILE DATA SAMPLING (MIMIR style)"

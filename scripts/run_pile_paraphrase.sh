@@ -7,16 +7,20 @@
 # Example: ./scripts/run_pile_paraphrase.sh pythia-2.8b   (uses all samples, batch_size=1)
 
 # 설정
-model_family=${1:-pythia-2.8b}
+model_family=${1:-pythia-6.7b}
 num_samples=${2:-null}
 batch_size=${3:-2}
 
 # 환경 설정b
 export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
-export PYTHONPATH=/root/memorization:$PYTHONPATH
+# Get script directory
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+export PYTHONPATH="$PROJECT_ROOT:$PYTHONPATH"
 
 # 디렉토리 이동
-cd /root/memorization
+cd "$PROJECT_ROOT"
 
 echo "=========================================="
 echo "PILE PARAPHRASE ANALYSIS"

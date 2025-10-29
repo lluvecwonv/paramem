@@ -57,6 +57,45 @@ def load_local_jsonl(file_path):
     return texts
 
 
+def collect_hidden_states(model, tokenizer, member_texts, nonmember_texts, max_length=512):
+    """Collect hidden states (last layer, last token) for member and nonmember samples"""
+
+    member_dataset = TextDataset(member_texts, tokenizer, max_length)
+    nonmember_dataset = TextDataset(nonmember_texts, tokenizer, max_length)
+
+    collate_fn = lambda x: tokenizer.pad(x, padding="longest", return_tensors="pt")
+    member_loader = DataLoader(member_dataset, shuffle=False, batch_size=1, collate_fn=collate_fn)
+    nonmember_loader = DataLoader(nonmember_dataset, shuffle=False, batch_size=1, collate_fn=collate_fn)
+
+    model.eval()
+
+    # Collect member hidden states
+    print("Collecting member hidden states...")
+    member_hidden_states = []
+    for step, batch in enumerate(tqdm(member_loader)):
+        batch = {k: v.to(model.device) for k, v in batch.items()}
+        with torch.no_grad():
+            outputs = model(**batch, output_hidden_states=True)
+
+        # Get last layer, last token hidden state
+        hidden_state = outputs.hidden_states[-1][:, -1, :].cpu().numpy().flatten()
+        member_hidden_states.append(hidden_state)
+
+    # Collect nonmember hidden states
+    print("Collecting nonmember hidden states...")
+    nonmember_hidden_states = []
+    for step, batch in enumerate(tqdm(nonmember_loader)):
+        batch = {k: v.to(model.device) for k, v in batch.items()}
+        with torch.no_grad():
+            outputs = model(**batch, output_hidden_states=True)
+
+        # Get last layer, last token hidden state
+        hidden_state = outputs.hidden_states[-1][:, -1, :].cpu().numpy().flatten()
+        nonmember_hidden_states.append(hidden_state)
+
+    return np.array(member_hidden_states), np.array(nonmember_hidden_states)
+
+
 def collect_gradient(model, tokenizer, member_texts, nonmember_texts, max_length=512):
     """Collect gradients for member and nonmember samples"""
 
@@ -120,6 +159,10 @@ def influence_function(member_grad_dict, nonmember_grad_dict, hvp_cal='gradient_
     IF_dict = defaultdict(dict)
     n_train = len(member_grad_dict.keys())
 
+    # Check if GPU is available
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f"Using device: {device}")
+
     def calculate_lambda_const(grad_dict, weight_name):
         S = torch.zeros(len(grad_dict.keys()))
         for id in grad_dict:
@@ -133,34 +176,89 @@ def influence_function(member_grad_dict, nonmember_grad_dict, hvp_cal='gradient_
         print(f"✓ HVP dictionary created ({len(hvp_dict)} items)")
 
     elif hvp_cal == 'DataInf':
-        print("Computing HVP using DataInf...")
-        for val_id in tqdm(nonmember_grad_dict.keys()):
+        print("Computing HVP using DataInf (GPU-accelerated)...")
+        for val_id in tqdm(nonmember_grad_dict.keys(), desc="Processing nonmembers"):
             for weight_name in nonmember_grad_dict[val_id]:
                 lambda_const = calculate_lambda_const(member_grad_dict, weight_name)
-                hvp = torch.zeros(nonmember_grad_dict[val_id][weight_name].shape)
+
+                # Move test gradient to GPU
+                test_grad = nonmember_grad_dict[val_id][weight_name].to(device)
+                hvp = torch.zeros_like(test_grad, device=device)
+
+                # Vectorized computation for all train samples
+                # Stack all train gradients for this weight into a single tensor
+                train_grads_list = []
                 for tr_id in member_grad_dict:
-                    tmp_grad = member_grad_dict[tr_id][weight_name]
-                    C_tmp = torch.sum(nonmember_grad_dict[val_id][weight_name] * tmp_grad) / \
-                            (lambda_const + torch.sum(tmp_grad**2))
-                    hvp += (nonmember_grad_dict[val_id][weight_name] - C_tmp * tmp_grad) / \
-                           (n_train * lambda_const)
-                hvp_dict[val_id][weight_name] = hvp
+                    if weight_name in member_grad_dict[tr_id]:
+                        train_grads_list.append(member_grad_dict[tr_id][weight_name].to(device))
+
+                if train_grads_list:
+                    # Stack into [num_train, grad_shape]
+                    train_grads = torch.stack(train_grads_list)  # [N, ...]
+
+                    # Reshape for batch computation
+                    original_shape = train_grads.shape[1:]
+                    train_grads_flat = train_grads.flatten(1)  # [N, D]
+                    test_grad_flat = test_grad.flatten()  # [D]
+
+                    # Vectorized computation
+                    # C_tmp = (v · g_i) / (λ + ||g_i||²)
+                    dot_products = torch.matmul(train_grads_flat, test_grad_flat)  # [N]
+                    grad_norms = torch.sum(train_grads_flat ** 2, dim=1)  # [N]
+                    C_tmp = dot_products / (lambda_const + grad_norms)  # [N]
+
+                    # hvp = Σ (v - C_i * g_i) / (N * λ)
+                    # Expand C_tmp for broadcasting
+                    C_tmp_expanded = C_tmp.view(-1, 1)  # [N, 1]
+                    corrections = train_grads_flat * C_tmp_expanded  # [N, D]
+                    hvp_flat = (test_grad_flat.unsqueeze(0) - corrections).sum(0) / (n_train * lambda_const)
+                    hvp = hvp_flat.reshape(original_shape)
+
+                hvp_dict[val_id][weight_name] = hvp.cpu()
+
+        print("✓ GPU computation complete, moving results to CPU")
 
     elif hvp_cal == 'LiSSA':
-        print("Computing HVP using LiSSA...")
-        for val_id in tqdm(nonmember_grad_dict.keys()):
+        print("Computing HVP using LiSSA (GPU-accelerated)...")
+        for val_id in tqdm(nonmember_grad_dict.keys(), desc="Processing nonmembers"):
             for weight_name in nonmember_grad_dict[val_id]:
                 lambda_const = calculate_lambda_const(member_grad_dict, weight_name)
-                running_hvp = nonmember_grad_dict[val_id][weight_name]
-                for _ in range(n_iteration):
-                    hvp_tmp = torch.zeros(nonmember_grad_dict[val_id][weight_name].shape)
-                    for tr_id in member_grad_dict:
-                        tmp_grad = member_grad_dict[tr_id][weight_name]
-                        hvp_tmp += (torch.sum(tmp_grad * running_hvp) * tmp_grad - \
-                                   lambda_const * running_hvp) / n_train / 1e3
-                    running_hvp = nonmember_grad_dict[val_id][weight_name] + running_hvp - \
-                                 alpha_const * hvp_tmp
-                hvp_dict[val_id][weight_name] = running_hvp
+
+                # Move to GPU
+                test_grad = nonmember_grad_dict[val_id][weight_name].to(device)
+                running_hvp = test_grad.clone()
+
+                # Prepare train gradients
+                train_grads_list = []
+                for tr_id in member_grad_dict:
+                    if weight_name in member_grad_dict[tr_id]:
+                        train_grads_list.append(member_grad_dict[tr_id][weight_name].to(device))
+
+                if train_grads_list:
+                    train_grads = torch.stack(train_grads_list)  # [N, ...]
+                    original_shape = train_grads.shape[1:]
+                    train_grads_flat = train_grads.flatten(1)  # [N, D]
+
+                    for _ in range(n_iteration):
+                        running_hvp_flat = running_hvp.flatten()  # [D]
+
+                        # Vectorized HVP computation
+                        dot_products = torch.matmul(train_grads_flat, running_hvp_flat)  # [N]
+                        hvp_contributions = train_grads_flat * dot_products.unsqueeze(1)  # [N, D]
+                        hvp_tmp_flat = (hvp_contributions.sum(0) - lambda_const * running_hvp_flat) / n_train / 1e3
+
+                        running_hvp_flat = test_grad.flatten() + running_hvp_flat - alpha_const * hvp_tmp_flat
+                        running_hvp = running_hvp_flat.reshape(original_shape)
+
+                hvp_dict[val_id][weight_name] = running_hvp.cpu()
+
+        print("✓ GPU computation complete, moving results to CPU")
+
+    elif hvp_cal == 'repsim':
+        print("Using repsim method (hidden state cosine similarity)...")
+        print("Note: This method requires hidden states, not gradients.")
+        print("Please use --hvp_method hidden_state instead, or provide hidden states directly.")
+        raise ValueError("repsim method should be called separately with hidden states")
 
     else:
         raise ValueError(f"Unknown hvp_cal method: {hvp_cal}")
@@ -183,6 +281,33 @@ def influence_function(member_grad_dict, nonmember_grad_dict, hvp_cal='gradient_
     print(f"✅ Influence computation complete!")
 
     return pd.DataFrame(IF_dict, dtype=float)
+
+
+def compute_repsim_similarity(member_hidden_states, nonmember_hidden_states):
+    """
+    Compute cosine similarity between hidden states (repsim method)
+
+    Args:
+        member_hidden_states: numpy array [N_members, hidden_dim]
+        nonmember_hidden_states: numpy array [N_nonmembers, hidden_dim]
+
+    Returns:
+        DataFrame with similarity scores [members x nonmembers]
+    """
+    print("Computing cosine similarity matrix (repsim)...")
+
+    # Normalize for cosine similarity
+    member_norms = np.linalg.norm(member_hidden_states, axis=1, keepdims=True)
+    nonmember_norms = np.linalg.norm(nonmember_hidden_states, axis=1, keepdims=True)
+
+    member_normalized = member_hidden_states / (member_norms + 1e-8)
+    nonmember_normalized = nonmember_hidden_states / (nonmember_norms + 1e-8)
+
+    # Compute cosine similarity: [N_members, N_nonmembers]
+    similarity_matrix = np.dot(member_normalized, nonmember_normalized.T)
+
+    print(f"✅ Computed similarity matrix: {similarity_matrix.shape}")
+    return pd.DataFrame(similarity_matrix, dtype=float)
 
 
 def get_metrics(scores, labels):
@@ -247,7 +372,7 @@ if __name__ == '__main__':
     parser.add_argument('--iter', type=int, default=3, help='#iteration for LiSSA')
     parser.add_argument('--alpha', type=float, default=1., help='alpha const for LiSSA')
     parser.add_argument('--hvp_method', type=str, default='gradient_match',
-                       help='HVP method: gradient_match, DataInf, LiSSA')
+                       help='HVP method: gradient_match, DataInf, LiSSA, repsim')
     parser.add_argument('--grad_cache', action='store_true', default=False,
                        help='use cached gradients')
     parser.add_argument('--only_collect_grad', action='store_true', default=False,
@@ -287,84 +412,139 @@ if __name__ == '__main__':
     os.makedirs(grad_dir, exist_ok=True)
     os.makedirs(cache_dir, exist_ok=True)
 
-    grad_cache_member = os.path.join(grad_dir, f'{args.model}_{args.domain}_member.pkl')
-    grad_cache_nonmember = os.path.join(grad_dir, f'{args.model}_{args.domain}_nonmember.pkl')
+    # Check if using repsim method (hidden states)
+    if args.hvp_method == 'repsim':
+        # Use hidden state cache files
+        hidden_cache_member = os.path.join(grad_dir, f'{args.model}_{args.domain}_member_hidden.npy')
+        hidden_cache_nonmember = os.path.join(grad_dir, f'{args.model}_{args.domain}_nonmember_hidden.npy')
 
-    # Load or collect gradients
-    if args.grad_cache and os.path.exists(grad_cache_member) and os.path.exists(grad_cache_nonmember):
-        print("Loading cached gradients...")
+        if args.grad_cache and os.path.exists(hidden_cache_member) and os.path.exists(hidden_cache_nonmember):
+            print("Loading cached hidden states...")
+            member_hidden_states = np.load(hidden_cache_member)
+            nonmember_hidden_states = np.load(hidden_cache_nonmember)
+            print(f"✅ Loaded {len(member_hidden_states)} member + {len(nonmember_hidden_states)} nonmember hidden states")
+        else:
+            # Load model
+            print(f"Loading model: {model_path}")
+            tokenizer = AutoTokenizer.from_pretrained(model_path)
+            tokenizer.pad_token = tokenizer.eos_token
+            model = AutoModelForCausalLM.from_pretrained(
+                model_path,
+                device_map='auto',
+                torch_dtype=torch.bfloat16
+            )
+            model.eval()
+            print("Model loaded")
 
-        # Check file sizes
-        member_size_gb = os.path.getsize(grad_cache_member) / (1024**3)
-        nonmember_size_gb = os.path.getsize(grad_cache_nonmember) / (1024**3)
-        print(f"  Member gradients: {member_size_gb:.1f} GB")
-        print(f"  Nonmember gradients: {nonmember_size_gb:.1f} GB")
-        print("  This may take several minutes for large files...")
+            # Load data
+            print(f"Loading data from {domain_dir}")
+            member_texts = load_local_jsonl(train_file)
+            nonmember_texts = load_local_jsonl(test_file)
+            print(f"Loaded {len(member_texts)} member and {len(nonmember_texts)} nonmember samples")
 
-        print("  Loading member gradients...")
-        with open(grad_cache_member, 'rb') as f:
-            member_grad_dict = pickle.load(f)
-        print(f"  ✓ Loaded {len(member_grad_dict)} member gradients")
+            # Limit samples
+            if args.max_samples > 0:
+                member_texts = member_texts[:args.max_samples]
+                nonmember_texts = nonmember_texts[:args.max_samples]
+                print(f"Limited to {args.max_samples} samples")
 
-        print("  Loading nonmember gradients...")
-        with open(grad_cache_nonmember, 'rb') as f:
-            nonmember_grad_dict = pickle.load(f)
-        print(f"  ✓ Loaded {len(nonmember_grad_dict)} nonmember gradients")
+            # Collect hidden states
+            member_hidden_states, nonmember_hidden_states = collect_hidden_states(
+                model, tokenizer, member_texts, nonmember_texts, args.max_length
+            )
 
-        print(f"✅ Total: {len(member_grad_dict)} member + {len(nonmember_grad_dict)} nonmember gradients loaded")
+            # Save hidden states
+            np.save(hidden_cache_member, member_hidden_states)
+            np.save(hidden_cache_nonmember, nonmember_hidden_states)
+            print(f"Hidden states saved")
+
+            del model, tokenizer
+            torch.cuda.empty_cache()
+
+        # Compute cosine similarity
+        print(f"Computing similarity with method: {args.hvp_method}")
+        influence_df = compute_repsim_similarity(member_hidden_states, nonmember_hidden_states)
+
     else:
-        # Load model
-        print(f"Loading model: {model_path}")
-        tokenizer = AutoTokenizer.from_pretrained(model_path)
-        tokenizer.pad_token = tokenizer.eos_token
-        model = AutoModelForCausalLM.from_pretrained(
-            model_path,
-            device_map='auto',
-            torch_dtype=torch.bfloat16
+        # Gradient-based methods
+        grad_cache_member = os.path.join(grad_dir, f'{args.model}_{args.domain}_member.pkl')
+        grad_cache_nonmember = os.path.join(grad_dir, f'{args.model}_{args.domain}_nonmember.pkl')
+
+        # Load or collect gradients
+        if args.grad_cache and os.path.exists(grad_cache_member) and os.path.exists(grad_cache_nonmember):
+            print("Loading cached gradients...")
+
+            # Check file sizes
+            member_size_gb = os.path.getsize(grad_cache_member) / (1024**3)
+            nonmember_size_gb = os.path.getsize(grad_cache_nonmember) / (1024**3)
+            print(f"  Member gradients: {member_size_gb:.1f} GB")
+            print(f"  Nonmember gradients: {nonmember_size_gb:.1f} GB")
+            print("  This may take several minutes for large files...")
+
+            print("  Loading member gradients...")
+            with open(grad_cache_member, 'rb') as f:
+                member_grad_dict = pickle.load(f)
+            print(f"  ✓ Loaded {len(member_grad_dict)} member gradients")
+
+            print("  Loading nonmember gradients...")
+            with open(grad_cache_nonmember, 'rb') as f:
+                nonmember_grad_dict = pickle.load(f)
+            print(f"  ✓ Loaded {len(nonmember_grad_dict)} nonmember gradients")
+
+            print(f"✅ Total: {len(member_grad_dict)} member + {len(nonmember_grad_dict)} nonmember gradients loaded")
+        else:
+            # Load model
+            print(f"Loading model: {model_path}")
+            tokenizer = AutoTokenizer.from_pretrained(model_path)
+            tokenizer.pad_token = tokenizer.eos_token
+            model = AutoModelForCausalLM.from_pretrained(
+                model_path,
+                device_map='auto',
+                torch_dtype=torch.bfloat16
+            )
+            model.eval()
+            print("Model loaded")
+
+            # Load data
+            print(f"Loading data from {domain_dir}")
+            member_texts = load_local_jsonl(train_file)
+            nonmember_texts = load_local_jsonl(test_file)
+            print(f"Loaded {len(member_texts)} member and {len(nonmember_texts)} nonmember samples")
+
+            # Limit samples
+            if args.max_samples > 0:
+                member_texts = member_texts[:args.max_samples]
+                nonmember_texts = nonmember_texts[:args.max_samples]
+                print(f"Limited to {args.max_samples} samples")
+
+            # Collect gradients
+            member_grad_dict, nonmember_grad_dict = collect_gradient(
+                model, tokenizer, member_texts, nonmember_texts, args.max_length
+            )
+
+            # Save gradients
+            with open(grad_cache_member, 'wb') as f:
+                pickle.dump(member_grad_dict, f)
+            with open(grad_cache_nonmember, 'wb') as f:
+                pickle.dump(nonmember_grad_dict, f)
+            print(f"Gradients saved")
+
+            if args.only_collect_grad:
+                print("Gradient collection complete. Exiting.")
+                exit()
+
+            del model, tokenizer
+            torch.cuda.empty_cache()
+
+        # Compute influence
+        print(f"Computing influence with method: {args.hvp_method}")
+        influence_df = influence_function(
+            member_grad_dict, nonmember_grad_dict,
+            hvp_cal=args.hvp_method,
+            lambda_const_param=args.lambda_c,
+            n_iteration=args.iter,
+            alpha_const=args.alpha
         )
-        model.eval()
-        print("Model loaded")
-
-        # Load data
-        print(f"Loading data from {domain_dir}")
-        member_texts = load_local_jsonl(train_file)
-        nonmember_texts = load_local_jsonl(test_file)
-        print(f"Loaded {len(member_texts)} member and {len(nonmember_texts)} nonmember samples")
-
-        # Limit samples
-        if args.max_samples > 0:
-            member_texts = member_texts[:args.max_samples]
-            nonmember_texts = nonmember_texts[:args.max_samples]
-            print(f"Limited to {args.max_samples} samples")
-
-        # Collect gradients
-        member_grad_dict, nonmember_grad_dict = collect_gradient(
-            model, tokenizer, member_texts, nonmember_texts, args.max_length
-        )
-
-        # Save gradients
-        with open(grad_cache_member, 'wb') as f:
-            pickle.dump(member_grad_dict, f)
-        with open(grad_cache_nonmember, 'wb') as f:
-            pickle.dump(nonmember_grad_dict, f)
-        print(f"Gradients saved")
-
-        if args.only_collect_grad:
-            print("Gradient collection complete. Exiting.")
-            exit()
-
-        del model, tokenizer
-        torch.cuda.empty_cache()
-
-    # Compute influence
-    print(f"Computing influence with method: {args.hvp_method}")
-    influence_df = influence_function(
-        member_grad_dict, nonmember_grad_dict,
-        hvp_cal=args.hvp_method,
-        lambda_const_param=args.lambda_c,
-        n_iteration=args.iter,
-        alpha_const=args.alpha
-    )
 
     # Save influence scores
     result_file = os.path.join(cache_dir, f'{args.model}_{args.domain}_{args.hvp_method}.csv')
