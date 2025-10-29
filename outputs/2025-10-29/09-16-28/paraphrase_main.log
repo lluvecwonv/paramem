@@ -1,0 +1,9 @@
+[2025-10-29 09:16:29,099][memorization.utils][INFO] - Loaded config for pythia-2.8b: EleutherAI/pythia-2.8b
+[2025-10-29 09:16:42,809][memorization.analysis.paraphrase_generator][INFO] - ParaphraseGenerator initialized: mode=beam_single_prompt, num_paraphrases=3, num_beams=2, temperature=0.25, top_p=0.9
+[2025-10-29 09:16:42,837][memorization.analysis.paraphrase_generation_utils][INFO] - Using controlled sampling (temperature=0.25, top_p=0.9)
+[2025-10-29 09:17:10,919][memorization.analysis.paraphrase_generation_utils][INFO] - Using controlled sampling (temperature=0.25, top_p=0.9)
+[2025-10-29 09:17:36,647][memorization.analysis.paraphrase_generation_utils][INFO] - Using controlled sampling (temperature=0.25, top_p=0.9)
+[2025-10-29 09:18:12,883][memorization.analysis.paraphrase_generation_utils][INFO] - Using controlled sampling (temperature=0.25, top_p=0.9)
+[2025-10-29 09:18:47,857][memorization.analysis.paraphrase_generation_utils][INFO] - Using controlled sampling (temperature=0.25, top_p=0.9)
+[2025-10-29 09:19:40,697][memorization.analysis.paraphrase_generation_utils][INFO] - Using controlled sampling (temperature=0.25, top_p=0.9)
+[2025-10-29 09:20:30,480][memorization.analysis.paraphrase_generation_utils][INFO] - Using controlled sampling (temperature=0.25, top_p=0.9)

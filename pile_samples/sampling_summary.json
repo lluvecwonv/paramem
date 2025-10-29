@@ -1,0 +1,45 @@
+{
+  "config": {
+    "dataset": "iamgroot42/mimir",
+    "split": "ngram_7_0.2",
+    "num_samples_per_domain": "all",
+    "description": "MIMIR dataset with member/nonmember split, no custom ngram filtering needed"
+  },
+  "results": [
+    {
+      "domain": "pile_cc",
+      "train_samples": 1000,
+      "test_samples": 1000
+    },
+    {
+      "domain": "wikipedia_(en)",
+      "train_samples": 1000,
+      "test_samples": 1000
+    },
+    {
+      "domain": "pubmed_central",
+      "train_samples": 491,
+      "test_samples": 491
+    },
+    {
+      "domain": "arxiv",
+      "train_samples": 500,
+      "test_samples": 500
+    },
+    {
+      "domain": "hackernews",
+      "train_samples": 646,
+      "test_samples": 646
+    },
+    {
+      "domain": "dm_mathematics",
+      "train_samples": 89,
+      "test_samples": 89
+    },
+    {
+      "domain": "github",
+      "train_samples": 268,
+      "test_samples": 268
+    }
+  ]
+}

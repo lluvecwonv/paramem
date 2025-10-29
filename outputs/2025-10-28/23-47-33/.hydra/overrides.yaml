@@ -1,0 +1,6 @@
+- model_family=pythia-2.8b
+- pile_samples_dir=./pile_samples
+- analysis.generation_mode=greedy_Nprompts
+- analysis.num_paraphrases=5
+- analysis.paraphrase_temperature=0.0
+- analysis.use_sampling=false

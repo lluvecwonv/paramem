@@ -1,0 +1,18 @@
+model_family: pythia-2.8b
+pile_samples_dir: ./pile_samples
+num_samples: null
+min_samples_per_bin: 10
+analysis:
+  batch_size: 1
+  num_paraphrases: 5
+  output_dir: results
+  generation_mode: greedy_Nprompts
+  num_beams: 1
+  paraphrase_temperature: 0.0
+  top_p: 0.9
+  use_sampling: false
+generation:
+  max_length: 512
+  max_new_tokens: 256
+device: cuda
+local_rank: 0

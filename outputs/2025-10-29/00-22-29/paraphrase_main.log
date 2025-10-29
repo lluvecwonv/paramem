@@ -1,0 +1,3 @@
+[2025-10-29 00:22:30,068][memorization.utils][INFO] - Loaded config for pythia-2.8b: EleutherAI/pythia-2.8b
+[2025-10-29 00:22:34,341][huggingface_hub.file_download][WARNING] - Xet Storage is enabled for this repo, but the 'hf_xet' package is not installed. Falling back to regular HTTP download. For better performance, install the package with: `pip install huggingface_hub[hf_xet]` or `pip install hf_xet`
+[2025-10-29 00:23:29,821][memorization.analysis.paraphrase_generator][INFO] - ParaphraseGenerator initialized: mode=greedy_Nprompts, num_paraphrases=5, num_beams=1, temperature=0.0, top_p=0.9

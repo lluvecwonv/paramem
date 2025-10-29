@@ -1,0 +1,23 @@
+model_family: pythia-2.8b
+model_path: EleutherAI/pythia-2.8b
+use_local_files: true
+pile_samples_dir: ./pile_samples
+dataset_name: iamgroot42/mimir
+dataset_config: pubmed_central
+dataset_split: ngram_13_0.2
+half: false
+int8: false
+mink_ratios:
+- 0.1
+- 0.2
+- 0.3
+- 0.4
+- 0.5
+- 0.6
+- 0.7
+- 0.8
+- 0.9
+- 1.0
+output_dir: results
+save_csv: true
+device: cuda

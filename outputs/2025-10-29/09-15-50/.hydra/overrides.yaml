@@ -1,0 +1,10 @@
+- model_family=/root
+- pile_samples_dir=./pile_samples
+- analysis.generation_mode=beam_single_prompt
+- analysis.num_paraphrases=3
+- analysis.num_beams=2
+- analysis.paraphrase_temperature=0.25
+- analysis.top_p=0.9
+- analysis.top_k=40
+- analysis.repetition_penalty=1.1
+- analysis.use_soft_beam_sampling=true
