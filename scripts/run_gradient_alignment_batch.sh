@@ -29,10 +29,10 @@ domains=(
 )
 
 # Environment setup
-export PYTHONPATH=/root/memorization:$PYTHONPATH
+export PYTHONPATH=/root/paramem:$PYTHONPATH
 
 # Change to project root
-cd /root/memorization
+cd /root/paramem
 
 echo "=========================================="
 echo "GRADIENT ALIGNMENT BATCH PROCESSING"
@@ -48,9 +48,10 @@ for domain in "${domains[@]}"; do
 done
 echo "=========================================="
 echo ""
+master_port=29503
 
 # Run gradient alignment with torchrun (single GPU)
-CUDA_VISIBLE_DEVICES=1 torchrun --nproc_per_node=1 \
+CUDA_VISIBLE_DEVICES=1 torchrun --nproc_per_node=1 --master_port=$master_port \
     memorization/gradient_alignment_main.py \
     model_family=$model_family \
     results_dir=$results_dir \
