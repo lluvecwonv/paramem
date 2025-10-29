@@ -78,7 +78,8 @@ def collect_hidden_states(model, tokenizer, member_texts, nonmember_texts, max_l
             outputs = model(**batch, output_hidden_states=True)
 
         # Get last layer, last token hidden state
-        hidden_state = outputs.hidden_states[-1][:, -1, :].cpu().numpy().flatten()
+        # Convert BFloat16 to float32 before numpy conversion
+        hidden_state = outputs.hidden_states[-1][:, -1, :].float().cpu().numpy().flatten()
         member_hidden_states.append(hidden_state)
 
     # Collect nonmember hidden states
@@ -90,7 +91,8 @@ def collect_hidden_states(model, tokenizer, member_texts, nonmember_texts, max_l
             outputs = model(**batch, output_hidden_states=True)
 
         # Get last layer, last token hidden state
-        hidden_state = outputs.hidden_states[-1][:, -1, :].cpu().numpy().flatten()
+        # Convert BFloat16 to float32 before numpy conversion
+        hidden_state = outputs.hidden_states[-1][:, -1, :].float().cpu().numpy().flatten()
         nonmember_hidden_states.append(hidden_state)
 
     return np.array(member_hidden_states), np.array(nonmember_hidden_states)
