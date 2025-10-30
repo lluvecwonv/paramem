@@ -229,28 +229,38 @@ def process_single_pair(train_file, test_file, model, tokenizer, device, cfg, ou
     logger.info("Loading TEST data...")
     test_texts, test_paraphrases, _ = load_paraphrase_results(test_file)
 
-    # Gradient Alignment 계산 (train과 test 결합)
-    all_texts = train_texts + test_texts
-    all_paraphrases = train_paraphrases + test_paraphrases
+    # Gradient Alignment 계산 (train과 test 독립적으로 계산)
+    logger.info(f"\n{'='*70}")
+    logger.info(f"🚀 Computing gradient alignments SEPARATELY")
+    logger.info(f"{'='*70}")
 
-    logger.info(f"🚀 Computing gradient alignments for {len(all_texts)} samples...")
-    logger.info(f"   - Train samples: {len(train_texts)}")
-    logger.info(f"   - Test samples:  {len(test_texts)}")
-
-    scores = compute_alignment_batch(
+    # 1. Train 데이터 gradient alignment 계산
+    logger.info(f"\n📊 [1/2] Computing TRAIN gradient alignments ({len(train_texts)} samples)...")
+    train_scores = compute_alignment_batch(
         model=model,
         tokenizer=tokenizer,
-        original_texts=all_texts,
-        paraphrase_lists=all_paraphrases,
+        original_texts=train_texts,
+        paraphrase_lists=train_paraphrases,
         max_len=cfg.max_length,
         device=str(device)
     )
+    logger.info(f"✅ Train scores computed: {len(train_scores)} samples")
+    logger.info(f"   Mean: {np.mean(train_scores):.4f} ± {np.std(train_scores):.4f}")
 
-    # 결과 분리
-    train_scores = scores[:len(train_texts)]
-    test_scores = scores[len(train_texts):]
+    # 2. Test 데이터 gradient alignment 계산
+    logger.info(f"\n📊 [2/2] Computing TEST gradient alignments ({len(test_texts)} samples)...")
+    test_scores = compute_alignment_batch(
+        model=model,
+        tokenizer=tokenizer,
+        original_texts=test_texts,
+        paraphrase_lists=test_paraphrases,
+        max_len=cfg.max_length,
+        device=str(device)
+    )
+    logger.info(f"✅ Test scores computed: {len(test_scores)} samples")
+    logger.info(f"   Mean: {np.mean(test_scores):.4f} ± {np.std(test_scores):.4f}")
 
-    logger.info(f"✅ Successfully processed {len(scores)} samples")
+    logger.info(f"\n✅ Successfully processed {len(train_scores) + len(test_scores)} samples total")
     logger.info(f"   - Train scores: {len(train_scores)}")
     logger.info(f"   - Test scores:  {len(test_scores)}")
 

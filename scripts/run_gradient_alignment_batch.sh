@@ -13,7 +13,7 @@
 set -e  # Exit on error
 
 # Parameters
-model_family=${1:-pythia-1.4b}
+model_family=${1:-pythia-2.8b}
 results_dir=${2:-./results}
 output_dir=${3:-./gradient_alignment_results}
 
@@ -48,10 +48,10 @@ for domain in "${domains[@]}"; do
 done
 echo "=========================================="
 echo ""
-master_port=29503
+master_port=29542
 
 # Run gradient alignment with torchrun (single GPU)
-CUDA_VISIBLE_DEVICES=1 torchrun --nproc_per_node=1 --master_port=$master_port \
+CUDA_VISIBLE_DEVICES=0 torchrun --nproc_per_node=1 --master_port=$master_port \
     memorization/gradient_alignment_main.py \
     model_family=$model_family \
     results_dir=$results_dir \

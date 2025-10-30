@@ -126,9 +126,15 @@ def collect_gradient(model, tokenizer, member_texts, nonmember_texts, max_length
                 # Only track embedding and lm_head for efficiency
                 if 'embed' in name or 'lm_head' in name:
                     grad_dict[name] = param.grad.cpu().clone()
+                # Clear gradient immediately
+                param.grad = None
 
         member_grad_dict[step] = grad_dict
-        del grad_dict
+
+        # Clean up memory
+        del batch, outputs, loss, grad_dict
+        if step % 100 == 0:
+            torch.cuda.empty_cache()
 
     # Collect nonmember gradients
     print("Collecting nonmember gradients...")
@@ -146,9 +152,20 @@ def collect_gradient(model, tokenizer, member_texts, nonmember_texts, max_length
                 # Only track embedding and lm_head for efficiency
                 if 'embed' in name or 'lm_head' in name:
                     grad_dict[name] = param.grad.cpu().clone()
+                # Clear gradient immediately
+                param.grad = None
 
         nonmember_grad_dict[step] = grad_dict
-        del grad_dict
+
+        # Clean up memory
+        del batch, outputs, loss, grad_dict
+        if step % 100 == 0:
+            torch.cuda.empty_cache()
+
+    # Final cleanup
+    torch.cuda.empty_cache()
+    import gc
+    gc.collect()
 
     return member_grad_dict, nonmember_grad_dict
 

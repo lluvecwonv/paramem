@@ -5,7 +5,7 @@
 # Example: ./scripts/run_influence_all.sh pythia-2.8b
 # Example: ./scripts/run_influence_all.sh pythia-410m
 
-model=${1:-pythia-6.7b}
+model=${1:-pythia-160m}
 
 export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-1}
 
@@ -22,6 +22,7 @@ domains=(
 hvp_methods=(
     "gradient_match"
     "DataInf"
+    "LiSSA"
     "repsim"
 )
 
@@ -69,7 +70,7 @@ for domain in "${domains[@]}"; do
             continue
         fi
 
-        # Run influence analysis
+        # Run influence analysis (single GPU to avoid OOM)
         CUDA_VISIBLE_DEVICES=1 python influence_pile.py \
             --model $model \
             --domain $domain \

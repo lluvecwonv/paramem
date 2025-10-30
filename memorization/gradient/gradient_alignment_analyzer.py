@@ -79,12 +79,17 @@ def collect_gradients(model, tokenizer, texts, max_length=512):
                 # Only track embedding and lm_head for efficiency (like influence_pile.py)
                 if 'embed' in name or 'lm_head' in name:
                     sample_grads[name] = param.grad.cpu().clone().flatten()
+                # Clear gradient immediately after copying
+                param.grad = None
 
         grad_dict[step] = sample_grads
 
         # Clean up to prevent memory issues
         del batch, outputs, loss
-        torch.cuda.empty_cache()
+        if step % 100 == 0:  # More aggressive cleanup every 100 samples
+            torch.cuda.empty_cache()
+            import gc
+            gc.collect()
 
     return grad_dict
 
@@ -131,7 +136,7 @@ def compute_alignment_batch(
     show_progress: bool = True
 ) -> List[float]:
     """
-    Compute gradient alignments for multiple samples (influence_pile.py style).
+    Compute gradient alignments for multiple samples (memory-efficient).
 
     Args:
         model: Model to analyze
@@ -148,51 +153,53 @@ def compute_alignment_batch(
     model.eval()
 
     print(f"\n{'='*60}")
-    print(f"Gradient Alignment Computation")
+    print(f"Gradient Alignment Computation (Memory-Efficient)")
     print(f"{'='*60}")
     print(f"Original texts: {len(original_texts)}")
     print(f"Paraphrases per text: {len(paraphrase_lists[0]) if paraphrase_lists else 0}")
     print(f"{'='*60}\n")
 
-    # Step 1: Collect gradients for original texts
-    print("Step 1: Collecting gradients for original texts...")
-    original_grad_dict = collect_gradients(model, tokenizer, original_texts, max_len)
-
-    # Step 2: Collect gradients for each paraphrase set
     num_paraphrases = len(paraphrase_lists[0]) if paraphrase_lists else 0
-    paraphrase_grad_dicts = []
-
-    print(f"\nStep 2: Collecting gradients for {num_paraphrases} paraphrase sets...")
-    for para_idx in range(num_paraphrases):
-        print(f"  Paraphrase set {para_idx + 1}/{num_paraphrases}")
-        # Extract para_idx-th paraphrase from each sample
-        paraphrase_texts = [
-            paras[para_idx] if para_idx < len(paras) else paras[0]
-            for paras in paraphrase_lists
-        ]
-        para_grad_dict = collect_gradients(model, tokenizer, paraphrase_texts, max_len)
-        paraphrase_grad_dicts.append(para_grad_dict)
-
-    # Step 3: Compute cosine similarity
-    print(f"\nStep 3: Computing gradient alignments...")
     alignment_scores = []
 
-    for sample_id in tqdm(range(len(original_texts)), desc="Computing alignment"):
-        orig_grads = original_grad_dict[sample_id]
+    # Process sample-by-sample to save memory
+    print("Computing gradient alignments (sample-by-sample)...")
+    for sample_id in tqdm(range(len(original_texts)), desc="Processing samples"):
+        # Step 1: Collect gradient for this original text
+        original_text = [original_texts[sample_id]]
+        original_grad_dict = collect_gradients(model, tokenizer, original_text, max_len)
+        orig_grads = original_grad_dict[0]
 
-        # Compute similarity with each paraphrase
+        # Step 2: Collect gradients for this sample's paraphrases
         sample_similarities = []
-        for para_grad_dict in paraphrase_grad_dicts:
-            if sample_id not in para_grad_dict:
-                continue
+        for para_idx in range(num_paraphrases):
+            paraphrase_text = [paraphrase_lists[sample_id][para_idx]
+                             if para_idx < len(paraphrase_lists[sample_id])
+                             else paraphrase_lists[sample_id][0]]
 
-            para_grads = para_grad_dict[sample_id]
+            para_grad_dict = collect_gradients(model, tokenizer, paraphrase_text, max_len)
+            para_grads = para_grad_dict[0]
+
+            # Compute similarity immediately
             similarity = cosine_similarity(orig_grads, para_grads)
             sample_similarities.append(similarity)
+
+            # Free memory immediately
+            del para_grad_dict, para_grads
+            torch.cuda.empty_cache()
 
         # Average over all paraphrases
         avg_similarity = np.mean(sample_similarities) if sample_similarities else 0.0
         alignment_scores.append(avg_similarity)
+
+        # Free memory for this sample
+        del original_grad_dict, orig_grads, sample_similarities
+
+        # Aggressive cleanup every 50 samples
+        if sample_id % 50 == 0:
+            torch.cuda.empty_cache()
+            import gc
+            gc.collect()
 
     # Print summary
     mean_score = np.mean(alignment_scores)
